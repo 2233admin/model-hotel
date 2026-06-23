@@ -27,6 +27,12 @@ PROVIDER_PRESET_BASE = {
     "openrouter": "https://openrouter.ai/api/v1",
 }
 
+ENV_PRESET_BASE_API = {
+    "nas": "http://192.168.50.130:8081",
+    "local": "http://localhost:8081",
+    "127": "http://127.0.0.1:8081",
+}
+
 DEFAULT_MODELS = [
     "deepseek-ai/deepseek-v4-flash",
     "minimaxai/minimax-m3",
@@ -409,7 +415,17 @@ def cmd_smoke(args: argparse.Namespace, client: ModelHotelClient) -> int:
 
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Model Hotel provider CLI")
-    parser.add_argument("--base-api", default="http://192.168.50.130:8081", help="Model Hotel base API")
+    parser.add_argument(
+        "--base-api",
+        default=None,
+        help="Model Hotel base API (overrides --env)",
+    )
+    parser.add_argument(
+        "--env",
+        default="nas",
+        choices=sorted(ENV_PRESET_BASE_API.keys()),
+        help="Target API environment preset, default: %(default)s",
+    )
     parser.add_argument("--admin-token", default=os.getenv("ADMIN_TOKEN"), help="Admin token (or set ADMIN_TOKEN)")
     parser.add_argument("--timeout", type=int, default=30, help="HTTP timeout in seconds")
 
@@ -452,6 +468,9 @@ def make_parser() -> argparse.ArgumentParser:
 
 
 def apply_import_defaults(args: argparse.Namespace) -> None:
+    if args.base_api is None:
+        args.base_api = ENV_PRESET_BASE_API[args.env]
+
     if args.command != "import":
         return
     if args.base_url is None:

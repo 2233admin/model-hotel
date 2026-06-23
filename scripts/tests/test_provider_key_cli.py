@@ -135,6 +135,17 @@ class TestProviderKeyCli(unittest.TestCase):
         cli.apply_import_defaults(args)
         self.assertEqual(args.base_url, cli.PROVIDER_PRESET_BASE["openrouter"])
 
+    def test_apply_import_defaults_uses_nas_env_by_default(self) -> None:
+        args = self.parser.parse_args(["import"])
+        cli.apply_import_defaults(args)
+        self.assertEqual(args.base_api, cli.ENV_PRESET_BASE_API["nas"])
+
+    def test_apply_import_defaults_respects_base_api_override(self) -> None:
+        custom_api = "http://127.0.0.1:9999"
+        args = self.parser.parse_args(["--base-api", custom_api, "--env", "nas", "import"])
+        cli.apply_import_defaults(args)
+        self.assertEqual(args.base_api, custom_api)
+
     def _run_cmd_import(self, args: list[str], client: FakeClient) -> tuple[dict[str, Any], int]:
         parsed = self.parser.parse_args(["import", *args])
         with patch("sys.stdout", new_callable=io.StringIO) as stdout:
@@ -265,4 +276,3 @@ class TestProviderKeyCli(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
