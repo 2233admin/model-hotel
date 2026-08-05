@@ -55,6 +55,10 @@ WORKDIR /app
 COPY --from=backend-builder /app/server .
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
+# Strip CRLF introduced by Windows/macOS clients before chmod (Alpine's /bin/sh
+# rejects shebang lines with trailing \r on the #! line).
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh
+
 # Ensure entrypoint and binary are executable and owned by runtime user
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
     chown -R appuser:appuser /app

@@ -166,6 +166,9 @@ func DetectProviderType(baseURL string) string {
 	if strings.HasSuffix(host, ".x.ai") {
 		return "xai"
 	}
+	if strings.HasSuffix(host, ".kimi.com") || strings.HasSuffix(host, ".moonshot.cn") {
+		return "kimi"
+	}
 	if strings.HasSuffix(host, ".cohere.com") || strings.HasSuffix(host, ".cohere.ai") {
 		return "cohere"
 	}
@@ -264,6 +267,8 @@ func (d *DiscoveryService) DiscoverModels(ctx context.Context, provider *Provide
 			return d.discoverGoogleAIStudio(ctx, provider, apiKey)
 		case "cohere":
 			return d.discoverCohere(ctx, provider, apiKey)
+		case "kimi":
+			return d.discoverKimi(ctx, provider, apiKey)
 		case "openrouter":
 			return d.discoverOpenRouter(ctx, provider, apiKey)
 		case "koboldcpp":
