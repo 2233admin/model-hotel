@@ -142,6 +142,34 @@ function normalizeForMatch(s: string): string {
 	return s.toLowerCase().replace(/[\s._-]+/g, "");
 }
 
+/**
+ * Drop the provider prefix from a proxy model id, returning the bare model id.
+ * proxyModelID builds "<providerName-with-spaces-as-dashes>/<model_id>", so the
+ * prefix to remove is exactly that provider segment, and ONLY when present:
+ * fetchRecommendedSettings is exported and callers may pass a bare model id
+ * directly, including slashful models.dev-style ids like "deepseek-ai/DeepSeek-R1".
+ * Stripping every leading slash would mangle those into "DeepSeek-R1" and make
+ * the exact catalog entry unreachable. So strip only when modelId actually starts
+ * with "<provider>/". The match is CASE-SENSITIVE on purpose: proxyModelID keeps
+ * the provider name's exact case, so a bare id whose first segment merely differs
+ * from the provider by case (e.g. "openai/gpt-4o" with provider "OpenAI", where
+ * "openai/gpt-4o" is itself an exact catalog entry) is an inner vendor, not the
+ * prefix, and must be preserved.
+ */
+function stripProviderPrefix(modelId: string, providerName: string): string {
+	const prefix = `${providerName.replace(/ /g, "-")}/`;
+	return modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
+}
+
+/**
+ * The model family identifier (gpt-4o, llama-3, deepseek-r1) always lives in the
+ * final path segment, so curated-pattern and family-bonus matching use just that
+ * segment. For "openai/gpt-4o" this is "gpt-4o"; for a bare id it is the id.
+ */
+function modelFamilySegment(modelId: string): string {
+	return modelId.slice(modelId.lastIndexOf("/") + 1);
+}
+
 // ---------------------------------------------------------------------------
 // models.dev API fetch (no module-level cache - TanStack Query handles caching)
 // ---------------------------------------------------------------------------
@@ -174,6 +202,11 @@ interface ModelsDevMatch {
 /**
  * Try to find the best matching models.dev entry for a local model.
  * Returns the match and a score (higher = better).
+ *
+ * `modelId` must be the bare model id (no "<provider>/" prefix), though it may
+ * keep an inner vendor segment (e.g. "openai/gpt-4o") so an exact catalog entry
+ * for that full id can still match. Callers strip the provider via
+ * stripProviderPrefix before calling.
  */
 function findModelsDevMatch(
 	api: ModelsDevApi,
@@ -184,6 +217,12 @@ function findModelsDevMatch(
 	const alias = PROVIDER_ALIASES[normProvider];
 	const mappedProvider = alias === false ? null : (alias ?? normProvider);
 	const normModel = normalizeForMatch(modelId);
+	// Leading family token (e.g. "llama" from "llama-3"), taken from the final
+	// path segment so an inner vendor prefix like "openai/" does not skew it.
+	// Computed once: it does not vary across models.
+	const searchFamilyToken = normalizeForMatch(
+		modelFamilySegment(modelId).split(/[\s._-]/)[0],
+	);
 
 	let best: ModelsDevMatch | null = null;
 
@@ -219,10 +258,12 @@ function findModelsDevMatch(
 			// Bonus for matching provider
 			if (providerMatch) score += 20;
 
-			// Bonus for family match
+			// Bonus for family match against the searched id's leading segment.
+			// (normModel is separator-stripped, so the previous normModel.split("-")
+			// never yielded a family token and this bonus could never fire.)
 			if (
 				model.family &&
-				normalizeForMatch(model.family) === normModel.split("-")[0]
+				normalizeForMatch(model.family) === searchFamilyToken
 			) {
 				score += 5;
 			}
@@ -268,12 +309,20 @@ export async function fetchRecommendedSettings(
 		matchedModelId: null,
 	};
 
-	// 1. Match curated settings by model family
-	const normModel = normalizeForMatch(modelId);
+	// Callers pass proxy ids like "OpenAI/gpt-4o" (provider arrives separately as
+	// providerName). Strip the provider for models.dev matching, keeping any inner
+	// vendor segment so an exact catalog entry (e.g. "deepseek-ai/DeepSeek-R1")
+	// still matches. Curated patterns are written against the family name, which
+	// is the final segment, so match those against it: "OpenRouter/openai/gpt-4o"
+	// -> "gpt-4o" keeps its curated GPT-4o defaults.
+	const bareModelId = stripProviderPrefix(modelId, providerName);
+
+	// 1. Match curated settings by model family (final segment of the id)
+	const normFamily = normalizeForMatch(modelFamilySegment(bareModelId));
 	let curatedParams: GenerationParams | null = null;
 
 	for (const [pattern, params] of RECOMMENDED_SETTINGS) {
-		if (normModel.startsWith(normalizeForMatch(pattern))) {
+		if (normFamily.startsWith(normalizeForMatch(pattern))) {
 			curatedParams = { ...params };
 			break;
 		}
@@ -286,7 +335,7 @@ export async function fetchRecommendedSettings(
 	let matchedModelId: string | null = null;
 
 	if (api) {
-		const match = findModelsDevMatch(api, providerName, modelId);
+		const match = findModelsDevMatch(api, providerName, bareModelId);
 		if (match) {
 			matchedProviderId = match.providerId;
 			matchedModelId = match.model.id;
@@ -312,13 +361,8 @@ export async function fetchRecommendedSettings(
 		return result;
 	}
 
-	// No curated match but we have models.dev data - at least set max_tokens (capped)
-	if (modelsDevMaxTokens !== undefined) {
-		result.params = { max_tokens: modelsDevMaxTokens };
-		result.maxTokensSource = "models.dev";
-		result.matchedProviderId = matchedProviderId;
-		result.matchedModelId = matchedModelId;
-	}
-
+	// No curated match and no models.dev limit: the first branch already handles
+	// the models.dev-only case (curatedParams null -> params starts as {} and
+	// max_tokens is filled in there), so nothing is left to set here.
 	return result;
 }

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,6 +54,45 @@ describe("DatabaseBackupSettings", () => {
 		await waitFor(() => {
 			expect(screen.getByText("Database Backup")).toBeInTheDocument();
 		});
+	});
+
+	it("labels manual backups and tags scheduled ones with their GFS bucket", async () => {
+		const manual = {
+			filename: "backup_20260115_103000_0010_manual.dump",
+			size_bytes: 1024,
+			created_at: "2026-01-15T10:30:00Z",
+			origin: "manual",
+		};
+		const scheduled = {
+			filename: "backup_20260116_103000_0010_auto.dump",
+			size_bytes: 2048,
+			created_at: "2026-01-16T10:30:00Z",
+			origin: "scheduled",
+		};
+		server.use(
+			http.get("/api/backups", () => HttpResponse.json([manual, scheduled])),
+			http.post("/api/backups/prune-preview", () =>
+				HttpResponse.json({
+					son: [scheduled],
+					father: [],
+					grandfather: [],
+					prune: [],
+				}),
+			),
+		);
+		renderWithProviders(
+			<DatabaseBackupSettings collapsed={false} onToggle={onToggle} />,
+		);
+
+		// Manual backup carries the accent "Manual" note...
+		expect(await screen.findByText(/Manual/)).toBeInTheDocument();
+		// ...and the scheduled one is tagged with its GFS bucket (Son).
+		const scheduledRow = (await screen.findByText(scheduled.filename)).closest(
+			"div",
+		);
+		expect(
+			await within(scheduledRow as HTMLElement).findByText("S"),
+		).toBeInTheDocument();
 	});
 
 	it("shows Create Backup button", async () => {
@@ -1283,5 +1322,57 @@ describe("DatabaseBackupSettings", () => {
 				});
 			});
 		});
+	});
+});
+
+describe("Backup rotation sliders", () => {
+	const onToggle = vi.fn();
+	const baseSettings = {
+		backup_enabled: "true",
+		backup_interval: "24h",
+		backup_son_retention: "7",
+		backup_father_retention: "4",
+		backup_grandfather_retention: "6",
+	};
+
+	beforeEach(() => {
+		onToggle.mockClear();
+		server.resetHandlers();
+		server.use(http.get("/api/backups", () => HttpResponse.json([])));
+	});
+
+	// Each rotation slider commits immediately on change (clampStep is set) and
+	// PUTs just its own key. These onChange handlers were uncovered because no
+	// test moved the sliders.
+	it.each([
+		["Backup Interval", "48", "backup_interval", "48h"],
+		["Daily Retention (Son)", "30", "backup_son_retention", "30"],
+		["Weekly Retention (Father)", "8", "backup_father_retention", "8"],
+		[
+			"Monthly Retention (Grandfather)",
+			"12",
+			"backup_grandfather_retention",
+			"12",
+		],
+	])("updates %s via the slider and PUTs %s", async (label, value, key, expected) => {
+		let captured: Record<string, string> | null = null;
+		server.use(
+			http.get("/api/settings", () => HttpResponse.json(baseSettings)),
+			http.put("/api/settings", async ({ request }) => {
+				captured = (await request.json()) as Record<string, string>;
+				return HttpResponse.json({});
+			}),
+		);
+		renderWithProviders(
+			<DatabaseBackupSettings collapsed={false} onToggle={onToggle} />,
+		);
+
+		const slider = await screen.findByLabelText(label);
+		// SettingsSlider commits the value (fires onChange) on pointer release,
+		// not on every drag tick.
+		fireEvent.change(slider, { target: { value } });
+		fireEvent.pointerUp(slider);
+
+		await waitFor(() => expect(captured).toEqual({ [key]: expected }));
 	});
 });

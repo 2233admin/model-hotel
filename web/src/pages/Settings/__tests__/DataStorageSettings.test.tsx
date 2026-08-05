@@ -68,6 +68,34 @@ describe("DataStorageSettings", () => {
 			),
 		).toBeInTheDocument();
 	});
+
+	it("falls back to defaults when reading its localStorage keys throws", () => {
+		// Privacy/locked-down browsers can make localStorage access throw. The
+		// quota/refresh useState initializers must swallow that and use defaults
+		// rather than crashing the settings page. Throw only for this component's
+		// own keys so the surrounding providers keep working.
+		const blockedKeys = new Set([
+			"sidebarQuotaDisabled",
+			"sidebarQuotaRefreshMin",
+			"dashboardRefreshSec",
+		]);
+		const realGetItem = Storage.prototype.getItem;
+		const getItemSpy = vi
+			.spyOn(Storage.prototype, "getItem")
+			.mockImplementation(function (this: Storage, key: string) {
+				if (blockedKeys.has(key)) throw new Error("localStorage blocked");
+				return realGetItem.call(this, key);
+			});
+
+		try {
+			renderWithProviders(
+				<DataStorageSettings collapsed={false} onToggle={onToggle} />,
+			);
+			expect(screen.getByText("Data Storage and Logging")).toBeInTheDocument();
+		} finally {
+			getItemSpy.mockRestore();
+		}
+	});
 });
 
 describe("Session Persistence toggles", () => {
@@ -947,6 +975,54 @@ describe("Delete Request Logs", () => {
 		});
 	});
 
+	it.each([
+		["1d", "24h"],
+		["1w", "168h"],
+		["1m", "720h"],
+		["all", "all"],
+	])("maps the %s selection to older_than=%s in the purge request", async (selection, expected) => {
+		let capturedOlderThan: string | undefined;
+		server.use(
+			http.delete("/api/logs/purge", async ({ request }) => {
+				capturedOlderThan = ((await request.json()) as { older_than: string })
+					.older_than;
+				return HttpResponse.json({ deleted: 1 });
+			}),
+		);
+		const user = userEvent.setup();
+		renderWithProviders(
+			<DataStorageSettings collapsed={false} onToggle={onToggle} />,
+		);
+
+		await user.click(screen.getByRole("button", { name: /delete requests/i }));
+		await user.selectOptions(screen.getByRole("combobox"), selection);
+		await user.click(screen.getByRole("button", { name: /confirm delete/i }));
+
+		await waitFor(() => expect(capturedOlderThan).toBe(expected));
+	});
+
+	it("shows an error toast when purging requests fails", async () => {
+		server.use(
+			http.delete("/api/logs/purge", () =>
+				HttpResponse.json({ error: "boom" }, { status: 500 }),
+			),
+		);
+		const user = userEvent.setup();
+		renderWithProviders(
+			<DataStorageSettings collapsed={false} onToggle={onToggle} />,
+		);
+
+		await user.click(screen.getByRole("button", { name: /delete requests/i }));
+		await user.selectOptions(screen.getByRole("combobox"), "1d");
+		await user.click(screen.getByRole("button", { name: /confirm delete/i }));
+
+		await waitFor(() => {
+			expect(screen.getByText(/failed to delete/i)).toBeInTheDocument();
+		});
+		// The confirm UI is dismissed on error.
+		expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+	});
+
 	it("cancels delete when cancel clicked", async () => {
 		const user = userEvent.setup();
 		renderWithProviders(
@@ -1024,6 +1100,25 @@ describe("Delete App Logs", () => {
 		// Verify the confirm button was clicked (mutation called via MSW handler)
 		await waitFor(() => {
 			expect(confirmButton).not.toBeInTheDocument();
+		});
+	});
+
+	it("shows an error toast when purging app logs fails", async () => {
+		server.use(
+			http.delete("/api/logs/app", () =>
+				HttpResponse.json({ error: "boom" }, { status: 500 }),
+			),
+		);
+		const user = userEvent.setup();
+		renderWithProviders(
+			<DataStorageSettings collapsed={false} onToggle={onToggle} />,
+		);
+
+		await user.click(screen.getByRole("button", { name: /delete logs/i }));
+		await user.click(screen.getByRole("button", { name: /^confirm$/i }));
+
+		await waitFor(() => {
+			expect(screen.getByText(/failed to delete/i)).toBeInTheDocument();
 		});
 	});
 

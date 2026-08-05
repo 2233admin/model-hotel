@@ -30,7 +30,18 @@
  <sub>Poke around a real instance at <a href="https://mh.site19.ddns.net">mh.site19.ddns.net</a> - rebuilds fresh every 30 minutes</sub>
 </div><br>
 
-A single OpenAI-compatible endpoint that sits in front of all your LLM providers. Models are auto-discovered the moment you add a provider and optionally on schedule; failover groups form automatically around shared model names and retry transparently when a provider goes down; no prompt data is ever stored.
+A single OpenAI-compatible endpoint that sits in front of all your LLM providers. Add a provider and its models show up automatically; shared model names form failover groups that retry transparently when one provider goes down. No prompt data is ever stored.
+
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Stars](https://img.shields.io/github/stars/2233admin/model-hotel)
+![Last Commit](https://img.shields.io/github/last-commit/2233admin/model-hotel)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
+
+- **One-liner**: One OpenAI-compatible endpoint in front of all your LLM providers, with transparent failover.
+- **For**: You juggle API keys and provider quirks across many services and want one endpoint.
+- **Not for**: You only use a single provider and need no routing, failover, or virtual keys.
+
+I built this because I was tired of juggling API keys and provider-specific quirks across half a dozen services. If you've ever wanted to point all your tools at one endpoint and forget about which backend actually serves the request, this might save you some time too.
 
 <div align="center">
 <br><img src="docs/screenshots/dashboard_themes.webp" alt="Dashboard cycling through the Clean SaaS, Cyber Terminal, and Glassmorphism UI styles" width="720"><br>
@@ -133,7 +144,7 @@ For providers that expose it, click a provider's quota badge (on its card or in 
 </p>
 
 ### [<img src="docs/icons/settings.svg" width="20" height="20" style="vertical-align:middle;margin-right:6px;" alt=""> Themeable UI](#-themeable-ui)
-Make the dashboard your own from the Appearance settings: pick one of three **UI styles** — **Clean SaaS** (refined and minimal, the default), **Cyber Terminal** (high-contrast, developer-centric), or **Glassmorphism** (slick translucent surfaces) — toggle **dark / light** mode, and choose an **accent color** (each style ships a tasteful default, or pick your own). Everything persists locally in the browser. The animated dashboard at the top of this page cycles through all three.
+Make the dashboard your own from the Appearance settings. Pick one of three **UI styles**: **Clean SaaS** (refined and minimal, the default), **Cyber Terminal** (high-contrast, developer-centric), or **Glassmorphism** (slick translucent surfaces). Then toggle **dark / light** mode, and choose an **accent color** (each style ships a tasteful default, or pick your own). Everything persists locally in the browser. The animated dashboard at the top of this page cycles through all three.
 
 <p align="center">
   <img src="docs/screenshots/dashboard_saas.png" width="265" alt="Clean SaaS UI style">
@@ -170,7 +181,7 @@ Provider API keys are encrypted at rest with AES-256-GCM. The `MASTER_KEY` is st
 Log into the admin dashboard using a FIDO2/WebAuthn passkey (Touch ID, Windows Hello, YubiKey, etc.) instead of the admin token. Register passkeys from the Settings page and use them on the login screen alongside the traditional admin token.
 
 <div align="center">
-<br><img src="docs/screenshots/login_passkey.png" alt="Passkey Login" width="360"><br>
+<br><img src="docs/screenshots/login_passkey.png" alt="Passkey Login" width="360"><br><br>
 </div>
 
 Passkey login is disabled by default. Enable it by setting `WEBAUTHN_RP_ID` (your domain) in the environment; `WEBAUTHN_RP_ORIGINS` (your origin URLs) falls back to `CORS_ORIGINS`, then to `http://localhost:<port>`. Session tokens are SHA-256 hashed, never stored in plaintext, and expire after 30 days.
@@ -428,6 +439,11 @@ docker exec -i postgres-container pg_restore --clean --if-exists -U user -d dbna
 
 ### Known Limitations
 - **Single-instance only**: Caches and rate limiters are in-memory, not horizontally scalable
+
+## Related Projects
+
+- [IonTerminal](https://github.com/2233admin/IonTerminal) — GPU-accelerated AI-ready terminal
+- [repowise](https://github.com/2233admin/repowise) — Codebase intelligence for AI agents
 
 ### [<img src="docs/icons/license.svg" width="20" height="20" style="vertical-align:middle;margin-right:6px;" alt=""> License](#-license)
 

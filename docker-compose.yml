@@ -1,9 +1,10 @@
 name: model-hotel
 services:
     app:
-        # Build from source (default):
+        # Build from source (local build for NAS)
         build:
             context: .
+            dockerfile: Dockerfile
             args:
                 VERSION: ${VERSION:-dev}
         # Prebuilt images (uncomment 1 image according to registry preference, comment out build above):
@@ -11,14 +12,13 @@ services:
         # image: hugalafutro/model-hotel:latest
         labels:
             app.group: model-hotel
+        container_name: model-hotel
         ports:
             - "${HOST_PORT:-8081}:8080"
         environment:
             - MASTER_KEY=${MASTER_KEY:?MASTER_KEY must be set in .env}
-            - POSTGRES_USER=${POSTGRES_USER:-modelhotel}
-            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
-            - POSTGRES_HOST=db
-            - POSTGRES_DB=${POSTGRES_DB:-modelhotel}
+            # External unified-pg18 database (reuse existing PostgreSQL)
+            - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@${POSTGRES_HOST}:5432/modelhotel
             - ADMIN_TOKEN=${ADMIN_TOKEN:-}
             - ALLOW_HTTP_PROVIDERS=false
             - ALLOW_EMBED=false
@@ -39,27 +39,33 @@ services:
             #     Only enable if you trust the deployment environment.
             # - /var/run/docker.sock:/var/run/docker.sock:ro
         restart: unless-stopped
-        depends_on:
-            db:
-                condition: service_healthy
+        networks:
+            - unified-pg18_default
 
-    db:
-        image: postgres:16-alpine
-        labels:
-            app.group: model-hotel
-        command: ["postgres", "-c", "log_min_error_statement=panic", "-c", "log_min_messages=error", "-c", "log_checkpoints=off"]
-        environment:
-            - POSTGRES_USER=${POSTGRES_USER:-modelhotel}
-            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
-            - POSTGRES_DB=${POSTGRES_DB:-modelhotel}
-        volumes:
-            - ./.data/pgdata:/var/lib/postgresql/data
-        restart: unless-stopped
-        healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-modelhotel}"]
-            interval: 5s
-            timeout: 5s
-            retries: 5
+    # NOTE: Using external unified-pg18 database instead of built-in db service
+    # To use built-in database instead, uncomment the following and remove external db config above
+    # db:
+    #     image: postgres:16-alpine
+    #     labels:
+    #         app.group: model-hotel
+    #     command: ["postgres", "-c", "log_min_error_statement=panic", "-c", "log_min_messages=error", "-c", "log_checkpoints=off"]
+    #     environment:
+    #         - POSTGRES_USER=${POSTGRES_USER:-modelhotel}
+    #         - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    #         - POSTGRES_DB=${POSTGRES_DB:-modelhotel}
+    #     volumes:
+    #         - ./.data/pgdata:/var/lib/postgresql/data
+    #     restart: unless-stopped
+    #     healthcheck:
+    #         test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-modelhotel}"]
+    #         interval: 5s
+    #         timeout: 5s
+    #         retries: 5
+
+networks:
+    unified-pg18_default:
+        external: true
+        name: unified-pg18_default
 
     # Optional: outbound alerting via Apprise. Uncomment to run a stateless
     # apprise-api container, then in Settings → Alerts set the Apprise API URL to
